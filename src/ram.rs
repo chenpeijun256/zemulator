@@ -21,8 +21,8 @@ impl Ram {
     }
 
     pub fn write_u16(&mut self, data: u16, pos: usize) {
-        self.data[pos+1] = data as u8;
-        self.data[pos] = (data>>8) as u8;
+        self.data[pos] = data as u8;
+        self.data[pos+1] = (data>>8) as u8;
     }
 
     pub fn read_u16(&self, pos: usize) -> u16 {
@@ -30,10 +30,10 @@ impl Ram {
     }
 
     pub fn write_u32(&mut self, data: u32, pos: usize) {
-        self.data[pos+3] = data as u8;
-        self.data[pos+2] = (data>>8) as u8;
-        self.data[pos+1] = (data>>16) as u8;
-        self.data[pos] = (data>>24) as u8;
+        self.data[pos] = data as u8;
+        self.data[pos+1] = (data>>8) as u8;
+        self.data[pos+2] = (data>>16) as u8;
+        self.data[pos+3] = (data>>24) as u8;
     }
 
     pub fn read_u32(&self, pos: usize) -> u32 {
