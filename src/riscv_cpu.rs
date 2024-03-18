@@ -1,50 +1,41 @@
-
-
-// enum instr_type {
-//     IS_U,
-//     IS_J,
-//     IS_I,
-//     IS_B,
-//     IS_S,
-//     IS_R,
-// }
-
-// enum instr_type {
-//     IS_LUI,
-//     IS_AUIPC,
-//     IS_JAL,
-//     IS_JALR,
-//     IS_JB,
-//     IS_LOAD,
-//     IS_STORE,
-//     IS_MATH_I,
-//     IS_MATH,
-//     IS_FENCE,
-//     IS_CSR,
-//     IS_SYS,
-// }
-
-const REG_NUM: usize = 32;
+use crate::csr_reg::CsrReg;
+use crate::perips::Perips;
+use crate::com_reg::ComReg;
+use crate::ram::Ram;
 
 pub struct RiscvCpu {
     pc: u32,
-    reg: [u32; REG_NUM],
+    reg: ComReg,
+    csr: CsrReg,
 
     tick_cnt: u32,
 
-    ram: crate::Ram,
+    ram: Ram,
+    gpio_a: Perips,
 }
 
 impl RiscvCpu {
     pub fn new(reset_pc: u32, ram: crate::Ram) -> Self {
-        RiscvCpu{ pc: reset_pc, reg: [0; REG_NUM], tick_cnt: 0, ram }
+        RiscvCpu{ 
+                    pc: reset_pc, 
+                    reg: ComReg::new(32), 
+                    tick_cnt: 0, 
+                    ram,
+                    csr: CsrReg::new(), 
+                    gpio_a: Perips::new(0xd1000000, 4) 
+                }
+    }
+
+    fn print_info(&mut self, instr: u32) {
+        println!("tick: {}, pc: {:x}, instr: {:08x}", self.tick_cnt, self.pc, instr);
+        // println!("{}", self.reg.to_string());
     }
 
     pub fn tick(&mut self) {
         self.tick_cnt += 1;
 
         let instr = self.ram.read_u32(self.pc as usize);
-        println!("pc: {:x} => {:08x}", self.pc, instr);
+        self.print_info(instr);
 
         //opcode = instr[6:0];
         match instr & 0x7f {
@@ -90,10 +81,19 @@ impl RiscvCpu {
                 self.execute_store(instr);
                 self.pc = self.pc.wrapping_add(4);
             },
+            //fence  7'b0001111
+            0x0f => {
+                self.execute_fence(instr);
+                self.pc = self.pc.wrapping_add(4);
+            },
+            //sys 7'b1110011
+            0x73 => {
+                self.execute_sys(instr);
+                self.pc = self.pc.wrapping_add(4);
+            },
             //others
             _ => {
-                println!("illegal instruction. {:08x}.", instr);
-                self.pc = self.pc.wrapping_add(4);
+                panic!("pc: {:x} inllegal instruction. {:08x}.", self.pc, instr);
             },
         }
     }
@@ -102,32 +102,32 @@ impl RiscvCpu {
         self.tick_cnt
     }
 
-    pub fn get_rs(&self, index: usize) -> u32 {
-        self.reg[index]
+    pub fn get_rs(&self, index: u32) -> u32 {
+        self.reg.read(index)
     }
 
-    fn set_rd(&mut self, instr: u32, data: u32) -> usize {
-        let rd = (instr>>7 & 0x1f) as usize;
+    fn set_rd(&mut self, instr: u32, data: u32) -> u32 {
+        let rd = instr>>7 & 0x1f;
         if rd != 0 {
-            self.reg[rd] = data;
+            self.reg.write(rd, data);
         }
         rd
     }
 
-    fn get_rs_1(&self, instr: u32) -> (usize, u32) {
-        let r1 = (instr>>15 & 0x1f) as usize;
+    fn get_rs_1(&self, instr: u32) -> (u32, u32) {
+        let r1 = instr>>15 & 0x1f;
         if r1 == 0 {
             return (0, 0);
         }
-        (r1, self.reg[r1])
+        (r1, self.reg.read(r1))
     }
 
-    fn get_rs_2(&mut self, instr: u32) -> (usize, u32) {
-        let r2 = (instr>>20 & 0x1f) as usize;
-        if r2 ==0 {
+    fn get_rs_2(&mut self, instr: u32) -> (u32, u32) {
+        let r2 = instr>>20 & 0x1f;
+        if r2 == 0 {
             return (0, 0);
         }
-        (r2, self.reg[r2])
+        (r2, self.reg.read(r2))
     }
 
     fn execute_lui(&mut self, instr: u32) {
@@ -255,22 +255,22 @@ impl RiscvCpu {
             },
             //xori 3'b100
             0x04 => {
-                let rd: usize = self.set_rd(instr, rs1_data ^ s_imm);
+                let rd = self.set_rd(instr, rs1_data ^ s_imm);
                 println!("xori x{rd}, x{rs1}, {s_imm}");
             },
             //ori 3'b110
             0x06 => {
-                let rd: usize = self.set_rd(instr, rs1_data | s_imm);
+                let rd = self.set_rd(instr, rs1_data | s_imm);
                 println!("ori x{rd}, x{rs1}, {s_imm}");
             },
             //andi 3'b111
             0x07 => {
-                let rd: usize = self.set_rd(instr, rs1_data & s_imm);
+                let rd = self.set_rd(instr, rs1_data & s_imm);
                 println!("andi x{rd}, x{rs1}, {s_imm}");
             },
             //slli 3'b001
             0x01 => {
-                let rd: usize = self.set_rd(instr, rs1_data << (s_imm & 0x1f));
+                let rd = self.set_rd(instr, rs1_data << (s_imm & 0x1f));
                 println!("slli x{rd}, x{rs1}, {s_imm}");
             },
             //srli srai 3'b101
@@ -278,13 +278,13 @@ impl RiscvCpu {
                 match instr>>25 & 0x7f {
                     //srli 7'b000_0000
                     0x00 => {
-                        let rd: usize = self.set_rd(instr, rs1_data >> (s_imm & 0x1f));
+                        let rd = self.set_rd(instr, rs1_data >> (s_imm & 0x1f));
                         println!("srli x{rd}, x{rs1}, {s_imm}");
                     },
                     //srai 7'b010_0000
                     0x20 => {
                         let rd_data = ((rs1_data as i32) >> (s_imm & 0x1f)) as u32;
-                        let rd: usize = self.set_rd(instr, rd_data);
+                        let rd = self.set_rd(instr, rd_data);
                         println!("srai x{rd}, x{rs1}, {s_imm}");
                     }
                     _ => {
@@ -301,153 +301,97 @@ impl RiscvCpu {
         let (rs1, rs1_data) = self.get_rs_1(instr);
         let (rs2, rs2_data) = self.get_rs_2(instr);
 
-        match instr>>12 & 0x07 {
+        match (instr>>12 & 0x07, instr>>25 & 0x7f) {
             //add sub mul 3'b000
-            0x00 => {
-                match instr>>25 & 0x7f {
-                    0x00 => {
-                        let rd = self.set_rd(instr, rs1_data.wrapping_add(rs2_data));
-                        println!("add x{rd}, x{rs1}, x{rs2}");
-                    },
-                    0x20 => {
-                        let rd = self.set_rd(instr, rs1_data.wrapping_sub(rs2_data));
-                        println!("sub x{rd}, x{rs1}, x{rs2}");
-                    }
-                    0x01 => {
-                        let rd_data = rs1_data.wrapping_mul(rs2_data);
-                        let rd = self.set_rd(instr, rd_data);
-                        println!("mul x{rd}, x{rs1}, x{rs2}");
-                    }
-                    _ => {
-                        println!("math b000 illegal instruction. {:08x}.", instr)
-                    },
-                }
+            (0x00, 0x00) => {
+                let rd = self.set_rd(instr, rs1_data.wrapping_add(rs2_data));
+                println!("add x{rd}, x{rs1}, x{rs2}");
+            },
+            (0x00, 0x20) => {
+                let rd = self.set_rd(instr, rs1_data.wrapping_sub(rs2_data));
+                println!("sub x{rd}, x{rs1}, x{rs2}");
+            },
+            (0x00, 0x01) => {
+                let rd_data = rs1_data.wrapping_mul(rs2_data);
+                let rd = self.set_rd(instr, rd_data);
+                println!("mul x{rd}, x{rs1}, x{rs2}");
             },
             //sll mulh 3'b001
-            0x01 => {
-                match instr>>25 & 0x7f {
-                    0x00 => {
-                        let rd: usize = self.set_rd(instr, rs1_data << (rs2_data & 0x1f));
-                        println!("sll x{rd}, x{rs1}, x{rs2}");
-                    },
-                    0x01 => {
-                        let rd_data: u32 = (((rs1_data as i32 as i64) * (rs2_data as i32 as i64)) >> 32) as u32;
-                        let rd = self.set_rd(instr, rd_data);
-                        println!("mulh x{rd}, x{rs1}, x{rs2}");
-                    }
-                    _ => {
-                        println!("math b001 illegal instruction. {:08x}.", instr)
-                    },
-                }
+            (0x01, 0x00) => {
+                let rd = self.set_rd(instr, rs1_data << (rs2_data & 0x1f));
+                println!("sll x{rd}, x{rs1}, x{rs2}");
+            },
+            (0x01, 0x01) => {
+                let rd_data: u32 = (((rs1_data as i32 as i64) * (rs2_data as i32 as i64)) >> 32) as u32;
+                let rd = self.set_rd(instr, rd_data);
+                println!("mulh x{rd}, x{rs1}, x{rs2}");
             },
             //slt mulhsu 3'b010
-            0x02 => {
-                match instr>>25 & 0x7f {
-                    0x00 => {
-                        let rd_data = if (rs1_data as i32) < (rs2_data as i32) {1} else {0};
-                        let rd = self.set_rd(instr, rd_data);
-                        println!("slt x{rd}, x{rs1}, x{rs2}");
-                    },
-                    0x01 => {
-                        let rd_data = (((rs1_data as i32 as i64) * (rs2_data as i64)) >> 32) as u32;
-                        let rd = self.set_rd(instr, rd_data);
-                        println!("mulhsu x{rd}, x{rs1}, x{rs2}");
-                    }
-                    _ => {
-                        println!("math b010 illegal instruction. {:08x}.", instr)
-                    },
-                }
+            (0x02, 0x00) => {
+                let rd_data = if (rs1_data as i32) < (rs2_data as i32) {1} else {0};
+                let rd = self.set_rd(instr, rd_data);
+                println!("slt x{rd}, x{rs1}, x{rs2}");
+            },
+            (0x02, 0x01) => {
+                let rd_data = (((rs1_data as i32 as i64) * (rs2_data as i64)) >> 32) as u32;
+                let rd = self.set_rd(instr, rd_data);
+                println!("mulhsu x{rd}, x{rs1}, x{rs2}");
             },
             //sltu mulhu 3'b011
-            0x03 => {
-                match instr>>25 & 0x7f {
-                    0x00 => {
-                        let rd_data = if rs1_data < rs2_data {1} else {0};
-                    let rd = self.set_rd(instr, rd_data);
-                    println!("sltu x{rd}, x{rs1}, x{rs2}");
-                    },
-                    0x01 => {
-                        let rd_data = (((rs1_data as u64) * (rs2_data as u64)) >> 32) as u32;
-                        let rd = self.set_rd(instr, rd_data);
-                        println!("mulhu x{rd}, x{rs1}, x{rs2}");
-                    }
-                    _ => {
-                        println!("math b011 illegal instruction. {:08x}.", instr)
-                    },
-                }
+            (0x03, 0x00) => {
+                let rd_data = if rs1_data < rs2_data {1} else {0};
+                let rd = self.set_rd(instr, rd_data);
+                println!("sltu x{rd}, x{rs1}, x{rs2}");
+            },
+            (0x03, 0x01) => {
+                let rd_data = (((rs1_data as u64) * (rs2_data as u64)) >> 32) as u32;
+                let rd = self.set_rd(instr, rd_data);
+                println!("mulhu x{rd}, x{rs1}, x{rs2}");
             },
             //xor div 3'b100
-            0x04 => {
-                match instr>>25 & 0x7f {
-                    0x00 => {
-                        let rd: usize = self.set_rd(instr, rs1_data ^ rs2_data);
-                        println!("xor x{rd}, x{rs1}, x{rs2}");
-                    },
-                    0x01 => {
-                        let rd_data: u32 = if rs2_data != 0 {((rs1_data as i32) / (rs2_data as i32)) as u32} else {0xffffffff};
-                        let rd = self.set_rd(instr, rd_data);
-                        println!("div x{rd}, x{rs1}, x{rs2}");
-                    }
-                    _ => {
-                        println!("math b100 illegal instruction. {:08x}.", instr)
-                    },
-                }
+            (0x04, 0x00) => {
+                let rd = self.set_rd(instr, rs1_data ^ rs2_data);
+                println!("xor x{rd}, x{rs1}, x{rs2}");
+            },
+            (0x04, 0x01) => {
+                let rd_data: u32 = if rs2_data != 0 {((rs1_data as i32) / (rs2_data as i32)) as u32} else {0xffffffff};
+                let rd = self.set_rd(instr, rd_data);
+                println!("div x{rd}, x{rs1}, x{rs2}");
             },
             //or rem 3'b110
-            0x06 => {
-                match instr>>25 & 0x7f {
-                    0x00 => {
-                        let rd: usize = self.set_rd(instr, rs1_data | rs2_data);
-                        println!("or x{rd}, x{rs1}, x{rs2}");
-                    },
-                    0x01 => {
-                        let rd_data: u32 = if rs2_data != 0 {((rs1_data as i32) % (rs2_data as i32)) as u32} else {rs1_data};
-                        let rd = self.set_rd(instr, rd_data);
-                        println!("rem x{rd}, x{rs1}, x{rs2}");
-                    }
-                    _ => {
-                        println!("math b110 illegal instruction. {:08x}.", instr)
-                    },
-                }
+            (0x06, 0x00) => {
+                let rd = self.set_rd(instr, rs1_data | rs2_data);
+                println!("or x{rd}, x{rs1}, x{rs2}");
             },
+            (0x06, 0x01) => {
+                let rd_data: u32 = if rs2_data != 0 {((rs1_data as i32) % (rs2_data as i32)) as u32} else {rs1_data};
+                let rd = self.set_rd(instr, rd_data);
+                println!("rem x{rd}, x{rs1}, x{rs2}");
+            }
             //and remu 3'b111
-            0x07 => {
-                match instr>>25 & 0x7f {
-                    0x00 => {
-                        let rd: usize = self.set_rd(instr, rs1_data & rs2_data);
-                        println!("and x{rd}, x{rs1}, x{rs2}");
-                    },
-                    0x01 => {
-                        let rd_data: u32 = if rs2_data!= 0 {rs1_data % rs2_data} else {rs1_data};
-                        let rd = self.set_rd(instr, rd_data);
-                        println!("remu x{rd}, x{rs1}, x{rs2}");
-                    }
-                    _ => {
-                        println!("math b110 illegal instruction. {:08x}.", instr)
-                    },
-                }
+            (0x07, 0x00) => {
+                let rd = self.set_rd(instr, rs1_data & rs2_data);
+                println!("and x{rd}, x{rs1}, x{rs2}");
+            },
+            (0x07, 0x01) => {
+                let rd_data: u32 = if rs2_data!= 0 {rs1_data % rs2_data} else {rs1_data};
+                let rd = self.set_rd(instr, rd_data);
+                println!("remu x{rd}, x{rs1}, x{rs2}");
             },
             //srl sra divu 3'b101
-            0x05 => {
-                match instr>>25 & 0x7f {
-                    0x00 => {
-                        let rd: usize = self.set_rd(instr, rs1_data >> (rs2_data & 0x1f));
-                        println!("srl x{rd}, x{rs1}, x{rs2}");
-                    },
-                    0x20 => {
-                        let rd_data = ((rs1_data as i32) >> (rs2_data & 0x1f)) as u32;
-                        let rd: usize = self.set_rd(instr, rd_data);
-                        println!("sra x{rd}, x{rs1}, x{rs2}");
-                    }
-                    0x01 => {
-                        let rd_data: u32 = if rs2_data!= 0 {rs1_data / rs2_data} else {0xffffffff};
-                        let rd = self.set_rd(instr, rd_data);
-                        println!("divu x{rd}, x{rs1}, x{rs2}");
-                    }
-                    _ => {
-                        println!("math srl sra illegal instruction. {:08x}.", instr)
-                    },
-                }
+            (0x05, 0x00) => {
+                let rd = self.set_rd(instr, rs1_data >> (rs2_data & 0x1f));
+                println!("srl x{rd}, x{rs1}, x{rs2}");
+            },
+            (0x05, 0x20) => {
+                let rd_data = ((rs1_data as i32) >> (rs2_data & 0x1f)) as u32;
+                let rd = self.set_rd(instr, rd_data);
+                println!("sra x{rd}, x{rs1}, x{rs2}");
+            },
+            (0x05, 0x01) => {
+                let rd_data: u32 = if rs2_data!= 0 {rs1_data / rs2_data} else {0xffffffff};
+                let rd = self.set_rd(instr, rd_data);
+                println!("divu x{rd}, x{rs1}, x{rs2}");
             },
             //others
             _ => println!("math i illegal instruction. {:08x}.", instr),
@@ -485,7 +429,13 @@ impl RiscvCpu {
             },
             //lw 3'b010
             0x02 => {
-                let rd_data = self.ram.read_u32(rs1_data.wrapping_add(s_imm) as usize);
+                let rd_data;
+                let r_addr = rs1_data.wrapping_add(s_imm) as usize;
+                if r_addr < 8196 {
+                    rd_data = self.ram.read_u32(r_addr);
+                } else {
+                    rd_data = self.gpio_a.read(r_addr as u32);
+                }
                 let rd = self.set_rd(instr, rd_data);
                 println!("lw x{rd}, {}(x{rs1})", s_imm as i32);
             },
@@ -515,11 +465,105 @@ impl RiscvCpu {
             //sw 3'b010
             0x02 => {
                 let wr_addr = rs1_data.wrapping_add(s_imm) as usize;
-                self.ram.write_u32(rs2_data, wr_addr);
+                if wr_addr < 8196 {
+                    self.ram.write_u32(rs2_data, wr_addr);
+                } else {
+                    self.gpio_a.write(wr_addr as u32, rs2_data);
+                }
                 println!("sb x{rs2}, {}(x{rs1})", s_imm as i32);
             },
             //others
             _ => println!("store illegal instruction. {:08x}.", instr),
         }
+    }
+
+    fn execute_fence(&mut self, instr: u32) {
+        match instr>>12 & 0x07 {
+            //fence 3'b000
+            0x00 => {
+                println!("fence {}, {}", (instr>>24)&0x0f, (instr>>20)&0x0f);
+            },
+            //fence.i 3'b001
+            0x01 => {
+                println!("fence.i");
+            },
+            _ => panic!("pc:{:x} fence illegal instruction. {:08x}.", self.pc, instr),
+        }
+    }
+
+    fn execute_sys(&mut self, instr: u32) {
+        let (rs1, rs1_data) = self.get_rs_1(instr);
+        let csr = instr>>20 & 0xfff;
+
+        match (instr>>12 & 0x07, instr>>20 & 0xfff) {
+            //ecall 3'b000, 12'h0
+            (0x00, 0x000) => {
+                println!("ecall");
+            },
+            //ebreak 3'b000, 12'h1
+            (0x00, 0x001) => {
+                println!("ebreak");
+            },
+            //mret 3'b000, 12'h1
+            (0x00, 0x302) => {
+                println!("mret");
+            },
+            //csrrw 3'b001, *
+            (0x01, _) => {
+                let t = self.csr.read(csr);
+                self.csr.write(csr, rs1_data);
+                let rd = self.set_rd(instr, t);
+                println!("csrrw {rd}, {csr}, {rs1}");
+            },
+            //csrrs 3'b010, *
+            (0x02, _) => {
+                let t = self.csr.read(csr);
+                self.csr.write(csr, rs1_data | t);
+                let rd = self.set_rd(instr, t);
+                println!("csrrs {rd}, {csr}, {rs1}");
+            },
+            //csrrc 3'b011, *
+            (0x03, _) => {
+                let t = self.csr.read(csr);
+                self.csr.write(csr, (!rs1_data) & t);
+                let rd = self.set_rd(instr, t);
+                println!("csrrc {rd}, {csr}, {rs1}");
+            },
+            //csrrwi 3'b101, *
+            (0x05, _) => {
+                let t = self.csr.read(csr);
+                self.csr.write(csr, rs1 as u32);
+                let rd = self.set_rd(instr, t);
+                println!("csrrwi {rd}, {csr}, {rs1}");
+            },
+            //csrrsi 3'b110, *
+            (0x06, _) => {
+                let t = self.csr.read(csr);
+                self.csr.write(csr, (rs1 as u32) | t);
+                let rd = self.set_rd(instr, t);
+                println!("csrrsi {rd}, {csr}, {rs1}");
+            },
+            //csrrci 3'b111, *
+            (0x07, _) => {
+                let t = self.csr.read(csr);
+                self.csr.write(csr, (!(rs1 as u32)) & t);
+                let rd = self.set_rd(instr, t);
+                println!("csrrci {rd}, {csr}, {rs1}");
+            },
+            _ => panic!("pc:{:x} sys illegal instruction. {:08x}.", self.pc, instr),
+        }
+    }
+
+    pub fn print_mem(&mut self, addr: u32) {
+        let pos = (addr & 0xffffff00) as usize;
+        println!("{}", self.ram.dump(pos));
+    }
+
+    pub fn print_reg(&mut self) {
+        println!("{}", self.reg.to_string());
+    }
+
+    pub fn print_csr(&mut self) {
+        println!("{}", self.csr.to_string());
     }
 }

@@ -4,13 +4,25 @@ pub struct Ram {
 }
 
 impl Ram {
-    pub fn new(data: Vec<u8>) -> Self {
+    pub fn new_with_data(data: Vec<u8>) -> Self {
         Ram { data }
     }
 
-    pub fn length(&self) -> usize {
-        self.data.len()
+    pub fn new(len: usize) -> Self {
+        Ram { data: vec![0; len] }
     }
+
+    pub fn fill(&mut self, data: Vec<u8>, pos: usize) {
+        let mut i = 0;
+        for elem in data {
+            self.data[pos + i] = elem;
+            i += 1;
+        }
+    }
+
+    // pub fn length(&self) -> usize {
+    //     self.data.len()
+    // }
 
     pub fn write_u8(&mut self, data: u8, pos: usize) {
         self.data[pos] = data;
@@ -41,5 +53,16 @@ impl Ram {
         ((self.data[pos+2] as u32) << 16) | 
         ((self.data[pos+1] as u32) << 8) | 
         (self.data[pos] as u32)
+    }
+
+    pub fn dump(&self, pos: usize) -> String {
+        let mut res = String::new();
+        for i in 0..128 {
+            if i % 16 == 0 {
+                res.push_str(&format!("\n{:08X }: ", pos + i));
+            }
+            res.push_str(&format!("{:02X} ", self.data[pos + i]));
+        }
+        return res;
     }
 }

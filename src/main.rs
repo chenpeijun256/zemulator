@@ -1,11 +1,15 @@
 mod bin_file;
 mod ram;
+mod com_reg;
+mod csr_reg;
 mod riscv_cpu;
+mod perips;
+
 
 use ram::Ram;
 use riscv_cpu::RiscvCpu;
 
-fn main() {
+fn test_isa() {
     let filenames = [
         "isa/rv32ui-p-add.bin", 
         "isa/rv32ui-p-addi.bin",
@@ -64,7 +68,7 @@ fn main() {
         println!("start read {filename}");
         match bin_file::read_file(filename) {
             Ok(bytes) => {
-                let ram = Ram::new(bytes);
+                let ram = Ram::new_with_data(bytes);
                 let mut cpu = RiscvCpu::new(0, ram);
                 let mut exit_loop = 0;
                 for _ in 0..500 {
@@ -111,4 +115,137 @@ fn main() {
         println!("{name}: ");
     }
     println!("successful {}.", filenames.len() - failed - not_complete);
+}
+
+fn split_string(line: String) -> Vec<String> {
+    let mut res = Vec::new();
+
+    line.trim().split_ascii_whitespace().for_each(|elem| {
+        res.push(elem.to_owned());
+    });
+    return res;
+}
+
+fn parse_i32(n_str: &str) -> i32 {
+    match i32::from_str_radix(n_str, 10) {
+        Ok(steps) => steps,
+        Err(_) => i32::MIN,
+    }
+}
+
+fn parse_hex_u32(n_str: &str) -> u32 {
+    match u32::from_str_radix(n_str, 16) {
+        Ok(steps) => steps,
+        Err(_) => 0,
+    }
+}
+
+fn test_one_file(filename: &String, mut steps: i32) {
+    println!("start read {filename}");
+    match bin_file::read_file(filename) {
+        Ok(bytes) => {
+            let mut ram = Ram::new(8196);
+            ram.fill(bytes, 0);
+            let mut cpu = RiscvCpu::new(0, ram);
+
+            loop {
+                if steps >= 0 {
+                    while steps > 0 {
+                        cpu.tick();
+                        steps -= 1;
+                    }
+
+                    let mut key = String::new();
+                    match std::io::stdin().read_line(&mut key) {
+                        Ok(_) => {
+                            // println!("{n} bytes read.");
+                            // println!("key = {}.", key.trim());
+                            let cmds = split_string(key);
+                            if cmds.len() > 0 {
+                                if cmds[0] == "q" {
+                                    break;
+                                } else if cmds[0] == "s" {
+                                    if cmds.len() > 1 {
+                                        steps = parse_i32(&cmds[1]);
+                                    } else {
+                                        steps = 1;
+                                    }
+                                } else if cmds[0] == "r" {
+                                    steps = 1;
+                                } else if cmds[0] == "i" {
+                                    println!("insert breakpoint.");
+                                    steps = 0;
+                                } else if cmds[0] == "p" {
+                                    if cmds.len() > 1 {
+                                        if cmds[1] == "mem" {
+                                            if cmds.len() > 2{
+                                                cpu.print_mem(parse_hex_u32(&cmds[2]));
+                                            } else {
+                                                cpu.print_mem(0);
+                                            }
+                                        } else if cmds[1] == "csr" {
+                                            cpu.print_csr();
+                                        } else {
+                                            cpu.print_reg();
+                                        }
+                                    } else {
+                                        println!("e.g. p reg/csr.");
+                                        println!("     p mem xxx(hex).");
+                                    }
+                                    steps = 0;
+                                } else {
+                                    println!("command can not found.");
+                                    steps = 0;
+                                }
+                            } else {
+                                println!("command can not found.");
+                                steps = 0;
+                            }
+                        },
+                        Err(e) => {
+                            println!("input error {e}.")
+                        },
+                    }
+                } else {
+                    cpu.tick();
+                }
+            }
+
+
+            println!("{filename} test completed!!! tick cnt: {}.", cpu.get_tick_cnt());
+        },
+        Err(e) => {
+            println!("文件读取错误, {}", e);
+        }
+    }
+}
+
+fn main() {
+    let args:Vec<String> = std::env::args().collect();
+
+    if args.len() > 1 {
+        if args[1] == "isa" {
+            test_isa();
+        } else {
+            if args.len() > 2 {
+                if args[2] =="-d" {
+                    test_one_file(&args[1], 0);
+                } else {
+                    match args[2].parse::<i32>() {
+                        Ok(steps) => test_one_file(&args[1], steps),
+                        Err(e) => println!("arg format error. {e}"),
+                    };
+                }
+            } else {
+                test_one_file(&args[1], -1);
+            }
+        }
+    } else {
+        println!("Please input with following format:");
+        println!("1. test all isa file: zemulator isa.");
+        println!("2. run and stop at start: zemulator filename -d.");
+        println!("3. run and stop at xxx steps: zemulator filename xxx.");
+        println!("4. run with no stop: zemulator filename.");
+        println!("--------------------------------");
+    }
 }
