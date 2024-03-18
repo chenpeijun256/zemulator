@@ -4,10 +4,12 @@ mod com_reg;
 mod csr_reg;
 mod riscv_cpu;
 mod perips;
+mod config;
 
 
 use ram::Ram;
 use riscv_cpu::RiscvCpu;
+use config::create_soc;
 
 fn test_isa() {
     let filenames = [
@@ -223,29 +225,31 @@ fn test_one_file(filename: &String, mut steps: i32) {
 fn main() {
     let args:Vec<String> = std::env::args().collect();
 
-    if args.len() > 1 {
-        if args[1] == "isa" {
-            test_isa();
-        } else {
-            if args.len() > 2 {
-                if args[2] =="-d" {
-                    test_one_file(&args[1], 0);
-                } else {
-                    match args[2].parse::<i32>() {
-                        Ok(steps) => test_one_file(&args[1], steps),
-                        Err(e) => println!("arg format error. {e}"),
-                    };
-                }
-            } else {
-                test_one_file(&args[1], -1);
-            }
-        }
-    } else {
-        println!("Please input with following format:");
-        println!("1. test all isa file: zemulator isa.");
-        println!("2. run and stop at start: zemulator filename -d.");
-        println!("3. run and stop at xxx steps: zemulator filename xxx.");
-        println!("4. run with no stop: zemulator filename.");
-        println!("--------------------------------");
-    }
+    create_soc("rv32im.cfg".to_owned());
+
+    // if args.len() > 1 {
+    //     if args[1] == "isa" {
+    //         test_isa();
+    //     } else {
+    //         if args.len() > 2 {
+    //             if args[2] =="-d" {
+    //                 test_one_file(&args[1], 0);
+    //             } else {
+    //                 match args[2].parse::<i32>() {
+    //                     Ok(steps) => test_one_file(&args[1], steps),
+    //                     Err(e) => println!("arg format error. {e}"),
+    //                 };
+    //             }
+    //         } else {
+    //             test_one_file(&args[1], -1);
+    //         }
+    //     }
+    // } else {
+    //     println!("Please input with following format:");
+    //     println!("1. test all isa file: zemulator isa.");
+    //     println!("2. run and stop at start: zemulator filename -d.");
+    //     println!("3. run and stop at xxx steps: zemulator filename xxx.");
+    //     println!("4. run with no stop: zemulator filename.");
+    //     println!("--------------------------------");
+    // }
 }
