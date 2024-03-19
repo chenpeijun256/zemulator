@@ -1,29 +1,46 @@
 use crate::csr_reg::CsrReg;
 use crate::perips::Perips;
 use crate::com_reg::ComReg;
-use crate::ram::Ram;
+use crate::mem::Mem;
 
 pub struct RiscvCpu {
+    name: String,
+
     pc: u32,
     reg: ComReg,
     csr: CsrReg,
 
     tick_cnt: u32,
 
-    ram: Ram,
-    gpio_a: Perips,
+    mems: Vec<Mem>,
+    perips: Vec<Perips>,
 }
 
 impl RiscvCpu {
-    pub fn new(reset_pc: u32, ram: crate::Ram) -> Self {
-        RiscvCpu{ 
-                    pc: reset_pc, 
+    pub fn new(name: String, rst_pc: u32) -> Self {
+        RiscvCpu{
+                    name,
+                    pc: rst_pc, 
                     reg: ComReg::new(32), 
                     tick_cnt: 0, 
-                    ram,
                     csr: CsrReg::new(), 
-                    gpio_a: Perips::new(0xd1000000, 4) 
+                    mems: Vec::new(),
+                    perips: Vec::new(),
                 }
+    }
+
+    pub fn add_mem(&mut self, mem: Mem) {
+        self.mems.push(mem);
+    }
+
+    pub fn add_perips(&mut self, p: Perips) {
+        self.perips.push(p);
+    }
+
+    pub fn fill_mem(&mut self, m_index: usize, data: Vec<u8>, pos: u32) {
+        if m_index < self.mems.len() {
+            self.mems[m_index].fill(data, pos);
+        }
     }
 
     fn print_info(&mut self, instr: u32) {
@@ -34,7 +51,7 @@ impl RiscvCpu {
     pub fn tick(&mut self) {
         self.tick_cnt += 1;
 
-        let instr = self.ram.read_u32(self.pc as usize);
+        let instr = self.mems[0].read_u32(self.pc);
         self.print_info(instr);
 
         //opcode = instr[6:0];
@@ -405,36 +422,36 @@ impl RiscvCpu {
         match instr>>12 & 0x07 {
             //lb 3'b000
             0x00 => {
-                let rd_data = self.ram.read_u8(rs1_data.wrapping_add(s_imm) as usize) as i8 as i32;
+                let rd_data = self.mems[0].read_u8(rs1_data.wrapping_add(s_imm)) as i8 as i32;
                 let rd = self.set_rd(instr, rd_data as u32);
                 println!("lb x{rd}, {}(x{rs1})", s_imm as i32);
             },
             //lbu 3'b100
             0x04 => {
-                let rd_data = self.ram.read_u8(rs1_data.wrapping_add(s_imm) as usize);
+                let rd_data = self.mems[0].read_u8(rs1_data.wrapping_add(s_imm));
                 let rd = self.set_rd(instr, rd_data as u32);
                 println!("lbu x{rd}, {}(x{rs1})", s_imm as i32);
             },
             //lh 3'b001
             0x01 => {
-                let rd_data = self.ram.read_u16(rs1_data.wrapping_add(s_imm) as usize) as i16 as i32;
+                let rd_data = self.mems[0].read_u16(rs1_data.wrapping_add(s_imm)) as i16 as i32;
                 let rd = self.set_rd(instr, rd_data as u32);
                 println!("lh x{rd}, {}(x{rs1})", s_imm as i32);
             },
             //lhu 3'b101
             0x05 => {
-                let rd_data = self.ram.read_u16(rs1_data.wrapping_add(s_imm) as usize);
+                let rd_data = self.mems[0].read_u16(rs1_data.wrapping_add(s_imm));
                 let rd = self.set_rd(instr, rd_data as u32);
                 println!("lhu x{rd}, {}(x{rs1})", s_imm as i32);
             },
             //lw 3'b010
             0x02 => {
                 let rd_data;
-                let r_addr = rs1_data.wrapping_add(s_imm) as usize;
+                let r_addr = rs1_data.wrapping_add(s_imm);
                 if r_addr < 8196 {
-                    rd_data = self.ram.read_u32(r_addr);
+                    rd_data = self.mems[0].read_u32(r_addr);
                 } else {
-                    rd_data = self.gpio_a.read(r_addr as u32);
+                    rd_data = self.perips[0].read(r_addr as u32);
                 }
                 let rd = self.set_rd(instr, rd_data);
                 println!("lw x{rd}, {}(x{rs1})", s_imm as i32);
@@ -452,23 +469,23 @@ impl RiscvCpu {
         match instr>>12 & 0x07 {
             //sb 3'b000
             0x00 => {
-                let wr_addr = rs1_data.wrapping_add(s_imm) as usize;
-                self.ram.write_u8((rs2_data & 0xff) as u8, wr_addr);
+                let wr_addr = rs1_data.wrapping_add(s_imm);
+                self.mems[0].write_u8((rs2_data & 0xff) as u8, wr_addr);
                 println!("sb x{rs2}, {}(x{rs1})", s_imm as i32);
             },
             //sh 3'b001
             0x01 => {
-                let wr_addr = rs1_data.wrapping_add(s_imm) as usize;
-                self.ram.write_u16((rs2_data & 0xffff) as u16, wr_addr);
+                let wr_addr = rs1_data.wrapping_add(s_imm);
+                self.mems[0].write_u16((rs2_data & 0xffff) as u16, wr_addr);
                 println!("sh x{rs2}, {}(x{rs1})", s_imm as i32);
             },
             //sw 3'b010
             0x02 => {
-                let wr_addr = rs1_data.wrapping_add(s_imm) as usize;
+                let wr_addr = rs1_data.wrapping_add(s_imm);
                 if wr_addr < 8196 {
-                    self.ram.write_u32(rs2_data, wr_addr);
+                    self.mems[0].write_u32(rs2_data, wr_addr);
                 } else {
-                    self.gpio_a.write(wr_addr as u32, rs2_data);
+                    self.perips[0].write(wr_addr as u32, rs2_data);
                 }
                 println!("sb x{rs2}, {}(x{rs1})", s_imm as i32);
             },
@@ -555,8 +572,8 @@ impl RiscvCpu {
     }
 
     pub fn print_mem(&mut self, addr: u32) {
-        let pos = (addr & 0xffffff00) as usize;
-        println!("{}", self.ram.dump(pos));
+        let pos = addr & 0xffffff00;
+        println!("{}", self.mems[0].dump(pos));
     }
 
     pub fn print_reg(&mut self) {

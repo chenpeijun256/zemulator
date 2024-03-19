@@ -1,15 +1,24 @@
 
+#[derive(Debug)]
 pub struct Perips {
+    name: String,
     registers: Vec<u32>,
 
     start_addr: u32,
     reg_size: u32,
+
+    intr: u32,
 }
 
 impl Perips {
 
-    pub fn new(addr: u32, size: u32) -> Self {
-        Perips { registers: vec![0; size as usize], start_addr: addr, reg_size: size }
+    pub fn new(name: String, addr: u32, size: u32, intr: u32) -> Self {
+        Perips {name,
+                registers: vec![0; size as usize], 
+                start_addr: addr, 
+                reg_size: size,
+                intr,
+            }
     }
 
     pub fn read(&self, addr: u32) -> u32 {

@@ -1,15 +1,12 @@
 mod bin_file;
-mod ram;
+mod mem;
 mod com_reg;
 mod csr_reg;
 mod riscv_cpu;
 mod perips;
 mod config;
 
-
-use ram::Ram;
 use riscv_cpu::RiscvCpu;
-use config::create_soc;
 
 fn test_isa() {
     let filenames = [
@@ -70,8 +67,9 @@ fn test_isa() {
         println!("start read {filename}");
         match bin_file::read_file(filename) {
             Ok(bytes) => {
-                let ram = Ram::new_with_data(bytes);
-                let mut cpu = RiscvCpu::new(0, ram);
+                let mut cpu: RiscvCpu = config::build_soc("".to_owned());
+                cpu.fill_mem(0, bytes, 0);
+
                 let mut exit_loop = 0;
                 for _ in 0..500 {
                     cpu.tick();
@@ -146,9 +144,8 @@ fn test_one_file(filename: &String, mut steps: i32) {
     println!("start read {filename}");
     match bin_file::read_file(filename) {
         Ok(bytes) => {
-            let mut ram = Ram::new(8196);
-            ram.fill(bytes, 0);
-            let mut cpu = RiscvCpu::new(0, ram);
+            let mut cpu: RiscvCpu = config::build_soc("rv32im.cfg".to_owned());
+            cpu.fill_mem(0, bytes, 0);
 
             loop {
                 if steps >= 0 {
@@ -225,31 +222,29 @@ fn test_one_file(filename: &String, mut steps: i32) {
 fn main() {
     let args:Vec<String> = std::env::args().collect();
 
-    create_soc("rv32im.cfg".to_owned());
-
-    // if args.len() > 1 {
-    //     if args[1] == "isa" {
-    //         test_isa();
-    //     } else {
-    //         if args.len() > 2 {
-    //             if args[2] =="-d" {
-    //                 test_one_file(&args[1], 0);
-    //             } else {
-    //                 match args[2].parse::<i32>() {
-    //                     Ok(steps) => test_one_file(&args[1], steps),
-    //                     Err(e) => println!("arg format error. {e}"),
-    //                 };
-    //             }
-    //         } else {
-    //             test_one_file(&args[1], -1);
-    //         }
-    //     }
-    // } else {
-    //     println!("Please input with following format:");
-    //     println!("1. test all isa file: zemulator isa.");
-    //     println!("2. run and stop at start: zemulator filename -d.");
-    //     println!("3. run and stop at xxx steps: zemulator filename xxx.");
-    //     println!("4. run with no stop: zemulator filename.");
-    //     println!("--------------------------------");
-    // }
+    if args.len() > 1 {
+        if args[1] == "isa" {
+            test_isa();
+        } else {
+            if args.len() > 2 {
+                if args[2] =="-d" {
+                    test_one_file(&args[1], 0);
+                } else {
+                    match args[2].parse::<i32>() {
+                        Ok(steps) => test_one_file(&args[1], steps),
+                        Err(e) => println!("arg format error. {e}"),
+                    };
+                }
+            } else {
+                test_one_file(&args[1], -1);
+            }
+        }
+    } else {
+        println!("Please input with following format:");
+        println!("1. test all isa file: zemulator isa.");
+        println!("2. run and stop at start: zemulator filename -d.");
+        println!("3. run and stop at xxx steps: zemulator filename xxx.");
+        println!("4. run with no stop: zemulator filename.");
+        println!("--------------------------------");
+    }
 }
