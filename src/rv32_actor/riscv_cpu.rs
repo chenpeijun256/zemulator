@@ -2,15 +2,17 @@ use crate::csr_reg::CsrReg;
 use crate::perips::Perips;
 use crate::com_reg::ComReg;
 use crate::mem::Mem;
+use crate::mem::MemIO;
 
 pub struct RiscvCpu {
     name: String,
+    
+    tick_cnt: u32,
 
     pc: u32,
+
     reg: ComReg,
     csr: CsrReg,
-
-    tick_cnt: u32,
 
     mems: Vec<Mem>,
     perips: Vec<Perips>,
@@ -44,7 +46,7 @@ impl RiscvCpu {
     }
 
     fn print_info(&mut self, instr: u32) {
-        println!("tick: {}, pc: {:x}, instr: {:08x}", self.tick_cnt, self.pc, instr);
+        println!("({})tick: {}, pc: {:x}, instr: {:08x}", self.name, self.tick_cnt, self.pc, instr);
         // println!("{}", self.reg.to_string());
     }
 
@@ -419,39 +421,75 @@ impl RiscvCpu {
         let (rs1, rs1_data) = self.get_rs_1(instr);
         let imm = (instr>>20) & 0x00000fff;
         let s_imm = if instr & 0x80000000 == 0x80000000 { 0xfffff000 | imm } else { imm };
+        let r_addr = rs1_data.wrapping_add(s_imm);
+
         match instr>>12 & 0x07 {
             //lb 3'b000
             0x00 => {
-                let rd_data = self.mems[0].read_u8(rs1_data.wrapping_add(s_imm)) as i8 as i32;
+                let mut rd_data = 0;
+                // self.mems.iter().for_each(|m| {
+                //     if m.in_range(r_addr) {
+                //         rd_data = m.read_u8(r_addr) as i8 as i32;
+                // }});
+                for m in self.mems.iter() {
+                    if m.in_range(r_addr) {
+                        rd_data = m.read_u8(r_addr) as i8 as i32;
+                        break;
+                    }
+                }
                 let rd = self.set_rd(instr, rd_data as u32);
                 println!("lb x{rd}, {}(x{rs1})", s_imm as i32);
             },
             //lbu 3'b100
             0x04 => {
-                let rd_data = self.mems[0].read_u8(rs1_data.wrapping_add(s_imm));
+                let mut rd_data = 0;
+                for m in self.mems.iter() {
+                    if m.in_range(r_addr) {
+                        rd_data = m.read_u8(r_addr);
+                        break;
+                    }
+                }
                 let rd = self.set_rd(instr, rd_data as u32);
                 println!("lbu x{rd}, {}(x{rs1})", s_imm as i32);
             },
             //lh 3'b001
             0x01 => {
-                let rd_data = self.mems[0].read_u16(rs1_data.wrapping_add(s_imm)) as i16 as i32;
+                let mut rd_data = 0;
+                for m in self.mems.iter() {
+                    if m.in_range(r_addr) {
+                        rd_data = m.read_u16(r_addr) as i16 as i32;
+                        break;
+                    }
+                }
                 let rd = self.set_rd(instr, rd_data as u32);
                 println!("lh x{rd}, {}(x{rs1})", s_imm as i32);
             },
             //lhu 3'b101
             0x05 => {
-                let rd_data = self.mems[0].read_u16(rs1_data.wrapping_add(s_imm));
+                let mut rd_data = 0;
+                for m in self.mems.iter() {
+                    if m.in_range(r_addr) {
+                        rd_data = m.read_u16(r_addr);
+                        break;
+                    }
+                }
                 let rd = self.set_rd(instr, rd_data as u32);
                 println!("lhu x{rd}, {}(x{rs1})", s_imm as i32);
             },
             //lw 3'b010
             0x02 => {
-                let rd_data;
-                let r_addr = rs1_data.wrapping_add(s_imm);
-                if r_addr < 8196 {
-                    rd_data = self.mems[0].read_u32(r_addr);
-                } else {
-                    rd_data = self.perips[0].read(r_addr as u32);
+                let mut rd_data = 0 ;
+                for m in self.mems.iter() {
+                    if m.in_range(r_addr) {
+                        rd_data = m.read_u32(r_addr);
+                        break;
+                    }
+                }
+                for p in self.perips.iter() {
+                    if p.in_range(r_addr) {
+                        rd_data = p.read_u32(r_addr);
+                        break;
+                    }
                 }
                 let rd = self.set_rd(instr, rd_data);
                 println!("lw x{rd}, {}(x{rs1})", s_imm as i32);
@@ -466,26 +504,42 @@ impl RiscvCpu {
         let (rs2, rs2_data) = self.get_rs_2(instr);
         let imm = ((instr>>20) & 0x000007e0) | ((instr>>7) & 0x0000001f);
         let s_imm = if instr & 0x80000000 == 0x80000000 { 0xfffff800 | imm } else { imm };
+        let wr_addr = rs1_data.wrapping_add(s_imm);
+
         match instr>>12 & 0x07 {
             //sb 3'b000
             0x00 => {
-                let wr_addr = rs1_data.wrapping_add(s_imm);
-                self.mems[0].write_u8((rs2_data & 0xff) as u8, wr_addr);
+                for m in self.mems.iter_mut() {
+                    if m.in_range(wr_addr) {
+                        m.write_u8((rs2_data & 0xff) as u8, wr_addr);
+                        break;
+                    }
+                }
                 println!("sb x{rs2}, {}(x{rs1})", s_imm as i32);
             },
             //sh 3'b001
             0x01 => {
-                let wr_addr = rs1_data.wrapping_add(s_imm);
-                self.mems[0].write_u16((rs2_data & 0xffff) as u16, wr_addr);
+                for m in self.mems.iter_mut() {
+                    if m.in_range(wr_addr) {
+                        m.write_u16((rs2_data & 0xffff) as u16, wr_addr);
+                        break;
+                    }
+                }
                 println!("sh x{rs2}, {}(x{rs1})", s_imm as i32);
             },
             //sw 3'b010
             0x02 => {
-                let wr_addr = rs1_data.wrapping_add(s_imm);
-                if wr_addr < 8196 {
-                    self.mems[0].write_u32(rs2_data, wr_addr);
-                } else {
-                    self.perips[0].write(wr_addr as u32, rs2_data);
+                for m in self.mems.iter_mut() {
+                    if m.in_range(wr_addr) {
+                        m.write_u32(rs2_data, wr_addr);
+                        break;
+                    }
+                }
+                for p in self.perips.iter_mut() {
+                    if p.in_range(wr_addr) {
+                        p.write_u32(rs2_data, wr_addr);
+                        break;
+                    }
                 }
                 println!("sb x{rs2}, {}(x{rs1})", s_imm as i32);
             },
@@ -571,16 +625,30 @@ impl RiscvCpu {
         }
     }
 
-    pub fn print_mem(&mut self, addr: u32) {
-        let pos = addr & 0xffffff00;
-        println!("{}", self.mems[0].dump(pos));
+    pub fn print_mem(&self, addr: u32) {
+        let addr2 = addr & 0xffffff00;
+        for m in self.mems.iter() {
+            if m.in_range(addr2) {
+                println!("{}", m.dump(addr2));
+                break;
+            }
+        }
     }
 
-    pub fn print_reg(&mut self) {
+    pub fn print_reg(&self) {
         println!("{}", self.reg.to_string());
     }
 
-    pub fn print_csr(&mut self) {
+    pub fn print_csr(&self) {
         println!("{}", self.csr.to_string());
     }
+
+    pub fn print_perips(&self, name: &String) {
+        for p in self.perips.iter() {
+            if p.name().eq(name) {
+                println!("{}", p.dump(0));
+            }
+        }
+    }
 }
+

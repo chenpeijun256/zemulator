@@ -1,10 +1,8 @@
 mod bin_file;
 mod mem;
-mod com_reg;
-mod csr_reg;
-mod riscv_cpu;
 mod perips;
 mod config;
+mod rv32_actor;
 
 use riscv_cpu::RiscvCpu;
 
@@ -77,7 +75,7 @@ fn test_isa() {
                     let s10 = cpu.get_rs(26);
                     if s10 == 1 {
                         exit_loop += 1;
-                        if exit_loop > 10 { 
+                        if exit_loop > 10 {
                             println!("loop break at {}", cpu.get_tick_cnt());
                             break;
                         }
@@ -182,10 +180,12 @@ fn test_one_file(filename: &String, mut steps: i32) {
                                             } else {
                                                 cpu.print_mem(0);
                                             }
+                                        } else if cmds[1] == "reg" {
+                                            cpu.print_reg();
                                         } else if cmds[1] == "csr" {
                                             cpu.print_csr();
                                         } else {
-                                            cpu.print_reg();
+                                            cpu.print_perips(&cmds[1]);
                                         }
                                     } else {
                                         println!("e.g. p reg/csr.");
