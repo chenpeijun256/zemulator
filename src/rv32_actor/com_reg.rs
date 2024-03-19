@@ -24,14 +24,13 @@ impl std::fmt::Display for ComReg {
                                     "s0", "s1", "a0", "a1", "a2", "a3", "a4", "a5",
                                     "a6", "a7", "s2", "s3", "s4", "s5", "s6", "s7",
                                     "s8", "s9", "s10", "s11", "t3", "t4", "t5", "t6"];
-        let mut out_str = "Reg-------------------------\n".to_owned();
+        let mut out_str = String::new();
         for (i, elem) in self.reg.iter().enumerate() {
             out_str.push_str(&format!("{}={:x}({}), ", reg_name[i], elem, elem));
             if i % 8 == 7 {
                 out_str.push_str("\n");
             }
         }
-        out_str.push_str("----------------------------");
         write!(f, "{}", out_str)
     }
 }

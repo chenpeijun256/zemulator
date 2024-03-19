@@ -3,8 +3,7 @@ use crate::rv32_actor::com_reg::ComReg;
 
 pub struct Rv32Cpu {
     name: String,
-    
-    tick_cnt: u32,
+
     freq: f32,
 
     pc: u32,
@@ -20,7 +19,6 @@ impl Rv32Cpu {
                     freq,
                     pc: rst_pc, 
                     reg: ComReg::new(32), 
-                    tick_cnt: 0, 
                     csr: CsrReg::new(), 
                 }
     }
@@ -31,14 +29,6 @@ impl Rv32Cpu {
 
     pub fn set_pc(&mut self, pc: u32) {
         self.pc = pc;
-    }
-
-    pub fn tick(&mut self) {
-        self.tick_cnt += 1;
-    }
-
-    pub fn get_time(&self) -> f64 {
-        (self.tick_cnt as f64) / ((self.freq * 1000.0 * 1000.0) as f64)
     }
 
     pub fn get_rs(&self, index: u32) -> u32 {
@@ -73,16 +63,16 @@ impl Rv32Cpu {
         self.csr.read(addr) 
     }
 
-    pub fn write_csr(&self, addr: u32, dat: u32) {
+    pub fn write_csr(&mut self, addr: u32, dat: u32) {
         self.csr.write(addr, dat);
     }
 
     pub fn print_reg(&self) {
-        println!("{}", self.reg.to_string());
+        println!("{} Reg:\n{}", self.name, self.reg.to_string());
     }
 
     pub fn print_csr(&self) {
-        println!("{}", self.csr.to_string());
+        println!("{} Csr:\n{}", self.name, self.csr.to_string());
     }
 }
 

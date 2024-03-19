@@ -64,24 +64,24 @@ fn test_isa() {
         match bin_file::read_file(filename) {
             Ok(bytes) => {
                 let mut soc = config::build_soc("".to_owned());
-                cpu.fill_mem(0, bytes, 0);
+                soc.fill_mem(0, bytes, 0);
 
                 let mut exit_loop = 0;
                 for _ in 0..500 {
-                    cpu.tick();
+                    soc.tick();
 
-                    let s10 = cpu.get_rs(26);
+                    let s10 = soc.get_rs(26);
                     if s10 == 1 {
                         exit_loop += 1;
                         if exit_loop > 10 {
-                            println!("loop break at {}", cpu.get_tick_cnt());
+                            println!("loop break at {}", soc.get_tick());
                             break;
                         }
                     }
                 }
     
-                let s10 = cpu.get_rs(26);
-                let s11 = cpu.get_rs(27);
+                let s10 = soc.get_rs(26);
+                let s11 = soc.get_rs(27);
                 if s10 == 1 { 
                     if s11 == 1 {
                         println!("{filename} test Ok!!!");
@@ -140,13 +140,13 @@ fn test_one_file(filename: &String, mut steps: i32) {
     println!("start read {filename}");
     match bin_file::read_file(filename) {
         Ok(bytes) => {
-            let mut cpu: RiscvCpu = config::build_soc("rv32im.cfg".to_owned());
-            cpu.fill_mem(0, bytes, 0);
+            let mut soc = config::build_soc("rv32im.cfg".to_owned());
+            soc.fill_mem(0, bytes, 0);
 
             loop {
                 if steps >= 0 {
                     while steps > 0 {
-                        cpu.tick();
+                        soc.tick();
                         steps -= 1;
                     }
 
@@ -174,16 +174,16 @@ fn test_one_file(filename: &String, mut steps: i32) {
                                     if cmds.len() > 1 {
                                         if cmds[1] == "mem" {
                                             if cmds.len() > 2{
-                                                cpu.print_mem(parse_hex_u32(&cmds[2]));
+                                                soc.print_mem(parse_hex_u32(&cmds[2]));
                                             } else {
-                                                cpu.print_mem(0);
+                                                soc.print_mem(0);
                                             }
                                         } else if cmds[1] == "reg" {
-                                            cpu.print_reg();
+                                            soc.print_reg();
                                         } else if cmds[1] == "csr" {
-                                            cpu.print_csr();
+                                            soc.print_csr();
                                         } else {
-                                            cpu.print_perips(&cmds[1]);
+                                            soc.print_perips(&cmds[1]);
                                         }
                                     } else {
                                         println!("e.g. p reg/csr.");
@@ -204,12 +204,12 @@ fn test_one_file(filename: &String, mut steps: i32) {
                         },
                     }
                 } else {
-                    cpu.tick();
+                    soc.tick();
                 }
             }
 
 
-            println!("{filename} test completed!!! tick cnt: {}.", cpu.get_tick_cnt());
+            println!("{filename} test completed!!! tick cnt: {}.", soc.get_tick());
         },
         Err(e) => {
             println!("文件读取错误, {}", e);

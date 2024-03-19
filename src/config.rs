@@ -11,6 +11,7 @@ struct CCpu {
     class: String,
     isa: String,
     freq: f32,
+    rst_pc: u32,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -32,7 +33,6 @@ struct CPerips {
 #[derive(Serialize, Deserialize)]
 struct CSoc {
     name: String,
-    rst_pc: u32,
     cpus: Vec<CCpu>,
     mems: Vec<CMem>,
     perips: Vec<CPerips>,
@@ -40,24 +40,24 @@ struct CSoc {
 
 pub fn build_soc(cfg_file: String) -> Rv32Actor {
     let soc_cfg = read_cfg(cfg_file);
-    println!("create {} soc with rst pc: {}", soc_cfg.name, soc_cfg.rst_pc);
-    let mut soc: Rv32Actor = Rv32Actor::new();
+    println!("create {} soc.", soc_cfg.name);
+    let mut soc: Rv32Actor = Rv32Actor::new(soc_cfg.name);
 
     for cfg in soc_cfg.cpus {
-        let cpu = Rv32Cpu::new(cfg.name, soc_cfg.rst_pc, cfg.freq);
-        println!("add cpu {:?} to cpu.", cpu);
+        println!("add {} to soc.", cfg.name);
+        let cpu = Rv32Cpu::new(cfg.name, cfg.rst_pc, cfg.freq);
         soc.add_cpu(cpu);
     }
 
     for cfg in soc_cfg.mems {
         let mem = Mem::new(cfg.name, cfg.start, cfg.size);
-        println!("add mem {:?} to cpu.", mem);
+        println!("add mem {:?} to soc.", mem);
         soc.add_mem(mem);
     }
 
     for cfg in soc_cfg.perips {
         let p = Perips::new(cfg.name, cfg.start, cfg.size, cfg.intr);
-        println!("add perips {:?} to cpu.", p);
+        println!("add perips {:?} to soc.", p);
         soc.add_perips(p);
     }
 
@@ -80,8 +80,7 @@ fn read_cfg(cfg_file: String) -> CSoc {
     };
 
     return CSoc{name: "default".to_owned(), 
-                rst_pc: 0,
-                cpus: vec![CCpu{name: "cpu0".to_owned(), class: "rv32".to_owned(), isa: "im".to_owned(), freq: 50.0}], 
+                cpus: vec![CCpu{name: "cpu0".to_owned(), class: "rv32".to_owned(), isa: "im".to_owned(), freq: 50.0, rst_pc: 0}], 
                 mems: vec![CMem{name: "ram".to_owned(), start: 0, size: 8192}], 
                 perips: Vec::new()
             };

@@ -12,6 +12,9 @@ const REG_NAME:[&str; 32] = ["zero", "ra", "sp", "gp", "tp", "t0", "t1", "t2",
                 "s8", "s9", "s10", "s11", "t3", "t4", "t5", "t6"];
 
 pub struct Rv32Actor {
+    name: String,
+    tick_cnt: u32,
+
     cpus: Vec<Rv32Cpu>,
 
     mems: Vec<Mem>,
@@ -19,8 +22,10 @@ pub struct Rv32Actor {
 }
 
 impl Rv32Actor {
-    pub fn new() -> Self {
+    pub fn new(name: String) -> Self {
         Rv32Actor{
+                    name,
+                    tick_cnt: 0,
                     cpus: Vec::new(),
                     mems: Vec::new(),
                     perips: Vec::new(),
@@ -45,16 +50,25 @@ impl Rv32Actor {
         }
     }
 
+    pub fn get_rs(&self, index: u32) -> u32 {
+        self.cpus[0].get_rs(index)
+    }
+
+    pub fn get_tick(&self) -> u32 {
+        self.tick_cnt
+    }
+
     pub fn tick(&mut self) {
-        for cpu in self.cpus.iter() {
+        for cpu in self.cpus.iter_mut() {
             let pc = cpu.get_pc();
             let instr = self.mems[0].read_u32(pc);
-            println!("(){}, pc: {:x}, instr: {:08x}", cpu.get_time(), pc, instr);
-            self.execute(cpu, pc, instr);
+            println!("({}@{}) pc: {:x}, instr: {:08x}", self.name, self.tick_cnt, pc, instr);
+            Rv32Actor::execute(cpu, pc, instr, &mut self.mems, &mut self.perips);
+            self.tick_cnt += 1;
         }
     }
 
-    fn execute(&self, cpu: &Rv32Cpu, pc: u32, instr: u32) {
+    fn execute(cpu: &mut Rv32Cpu, pc: u32, instr: u32, mems: &mut Vec<Mem>, perips: &mut Vec<Perips>) {
         //opcode = instr[6:0];
         match instr & 0x7f {
             //lui 7'b0110111
@@ -91,12 +105,12 @@ impl Rv32Actor {
             },
             //load, 7'b0000011
             0x03 => {
-                self.execute_load(cpu, instr);
+                Rv32Actor::execute_load(cpu, instr, mems, perips);
                 cpu.set_pc(pc.wrapping_add(4));
             },
             //store, 7'b0100011
             0x23 => {
-                self.execute_store(cpu, instr);
+                Rv32Actor::execute_store(cpu, instr, mems, perips);
                 cpu.set_pc(pc.wrapping_add(4));
             },
             //fence  7'b0001111
@@ -116,47 +130,19 @@ impl Rv32Actor {
         }
     }
 
-    // pub fn get_rs(&self, index: u32) -> u32 {
-    //     self.reg.read(index)
-    // }
-
-    // fn set_rd(&mut self, instr: u32, data: u32) -> u32 {
-    //     let rd = instr>>7 & 0x1f;
-    //     if rd != 0 {
-    //         self.reg.write(rd, data);
-    //     }
-    //     rd
-    // }
-
-    // fn get_rs_1(&self, instr: u32) -> (u32, u32) {
-    //     let r1 = instr>>15 & 0x1f;
-    //     if r1 == 0 {
-    //         return (0, 0);
-    //     }
-    //     (r1, self.reg.read(r1))
-    // }
-
-    // fn get_rs_2(&mut self, instr: u32) -> (u32, u32) {
-    //     let r2 = instr>>20 & 0x1f;
-    //     if r2 == 0 {
-    //         return (0, 0);
-    //     }
-    //     (r2, self.reg.read(r2))
-    // }
-
-    fn execute_lui(cpu: &Rv32Cpu, instr: u32) {
+    fn execute_lui(cpu: &mut Rv32Cpu, instr: u32) {
         let imm = instr & 0xfffff000;
         let rd = cpu.set_rd(instr, imm);
         println!("lui {}, {:x}", REG_NAME[rd], imm);
     }
 
-    fn execute_auipc(cpu: &Rv32Cpu, pc: u32, instr: u32) {
+    fn execute_auipc(cpu: &mut Rv32Cpu, pc: u32, instr: u32) {
         let imm = instr & 0xfffff000;
         let rd = cpu.set_rd(instr, imm + pc);
         println!("auipc {}, {:x}", REG_NAME[rd], imm);
     }
 
-    fn execute_jal(cpu: &Rv32Cpu, pc: u32, instr: u32) {
+    fn execute_jal(cpu: &mut Rv32Cpu, pc: u32, instr: u32) {
         let imm = (instr & 0x000ff000) | 
                     ((instr>>8) & 0x00000800) | 
                     ((instr>>20) & 0x000007fe);
@@ -166,7 +152,7 @@ impl Rv32Actor {
         println!("jal {}, {}", REG_NAME[rd], offset as i32);
     }
 
-    fn execute_jalr(cpu: &Rv32Cpu, pc: u32, instr: u32) {
+    fn execute_jalr(cpu: &mut Rv32Cpu, pc: u32, instr: u32) {
         let imm = (instr>>20) & 0x00000fff;
         let offset = if instr & 0x80000000 == 0x80000000 { 0xfffff000 | imm } else { imm };
         let rd = cpu.set_rd(instr, pc + 4);
@@ -175,7 +161,7 @@ impl Rv32Actor {
         println!("jalr {}, {}({})", REG_NAME[rd], offset as i32, REG_NAME[rs1]);
     }
 
-    fn execute_jb(cpu: &Rv32Cpu, pc: u32, instr: u32) {
+    fn execute_jb(cpu: &mut Rv32Cpu, pc: u32, instr: u32) {
         let (rs1, rs1_data) = cpu.get_rs_1(instr);
         let (rs2, rs2_data) = cpu.get_rs_2(instr);
         let imm = ((instr<<4) & 0x00000800) | 
@@ -239,11 +225,11 @@ impl Rv32Actor {
                 println!("bgeu {}, {}, {}", REG_NAME[rs1], REG_NAME[rs2], offset as i32);
             },
             //others
-            _ => println!("jb illegal instruction. {:08x}.", instr),
+            _ => panic!("jb illegal instruction. {:08x}.", instr),
         }
     }
 
-    fn execute_math_i(cpu: &Rv32Cpu, instr: u32) {
+    fn execute_math_i(cpu: &mut Rv32Cpu, instr: u32) {
         let (rs1, rs1_data) = cpu.get_rs_1(instr);
         let imm = (instr>>20) & 0x00000fff;
         let s_imm = if instr & 0x80000000 == 0x80000000 { 0xfffff000 | imm } else { imm };
@@ -253,39 +239,39 @@ impl Rv32Actor {
             //addi 3'b000
             0x00 => {
                 let rd = cpu.set_rd(instr, rs1_data.wrapping_add(s_imm));
-                println!("addi {}, {}, {s_imm}", REG_NAME[rd], REG_NAME[rs1]);
+                println!("addi {}, {}, {}", REG_NAME[rd], REG_NAME[rs1], s_imm as i32);
             },
             //slti 3'b010
             0x02 => {
                 let rd_data = if (rs1_data as i32) < (s_imm as i32) {1} else {0};
                 let rd = cpu.set_rd(instr, rd_data);
-                println!("slti {}, {}, {s_imm}", REG_NAME[rd], REG_NAME[rs1]);
+                println!("slti {}, {}, {}", REG_NAME[rd], REG_NAME[rs1], s_imm as i32);
             },
             //sltiu 3'b011
             0x03 => {
                 let rd_data = if rs1_data < s_imm {1} else {0};
                 let rd = cpu.set_rd(instr, rd_data);
-                println!("sltiu {}, {}, {s_imm}", REG_NAME[rd], REG_NAME[rs1]);
+                println!("sltiu {}, {}, {:08x}", REG_NAME[rd], REG_NAME[rs1], s_imm);
             },
             //xori 3'b100
             0x04 => {
                 let rd = cpu.set_rd(instr, rs1_data ^ s_imm);
-                println!("xori {}, {}, {s_imm}", REG_NAME[rd], REG_NAME[rs1]);
+                println!("xori {}, {}, {:08x}", REG_NAME[rd], REG_NAME[rs1], s_imm);
             },
             //ori 3'b110
             0x06 => {
                 let rd = cpu.set_rd(instr, rs1_data | s_imm);
-                println!("ori {}, {}, {s_imm}", REG_NAME[rd], REG_NAME[rs1]);
+                println!("ori {}, {}, {:08x}", REG_NAME[rd], REG_NAME[rs1], s_imm);
             },
             //andi 3'b111
             0x07 => {
                 let rd = cpu.set_rd(instr, rs1_data & s_imm);
-                println!("andi {}, {}, {s_imm}", REG_NAME[rd], REG_NAME[rs1]);
+                println!("andi {}, {}, {:08x}", REG_NAME[rd], REG_NAME[rs1], s_imm);
             },
             //slli 3'b001
             0x01 => {
                 let rd = cpu.set_rd(instr, rs1_data << (s_imm & 0x1f));
-                println!("slli {}, {}, {s_imm}", REG_NAME[rd], REG_NAME[rs1]);
+                println!("slli {}, {}, {}", REG_NAME[rd], REG_NAME[rs1], s_imm & 0x1f);
             },
             //srli srai 3'b101
             0x05 => {
@@ -293,13 +279,13 @@ impl Rv32Actor {
                     //srli 7'b000_0000
                     0x00 => {
                         let rd = cpu.set_rd(instr, rs1_data >> (s_imm & 0x1f));
-                        println!("srli {}, {}, {s_imm}", REG_NAME[rd], REG_NAME[rs1]);
+                        println!("srli {}, {}, {}", REG_NAME[rd], REG_NAME[rs1], s_imm & 0x1f);
                     },
                     //srai 7'b010_0000
                     0x20 => {
                         let rd_data = ((rs1_data as i32) >> (s_imm & 0x1f)) as u32;
                         let rd = cpu.set_rd(instr, rd_data);
-                        println!("srai {}, {}, {s_imm}", REG_NAME[rd], REG_NAME[rs1]);
+                        println!("srai {}, {}, {}", REG_NAME[rd], REG_NAME[rs1], s_imm & 0x1f);
                     }
                     _ => {
                         println!("math i sr illegal instruction. {:08x}.", instr)
@@ -307,11 +293,11 @@ impl Rv32Actor {
                 }
             },
             //others
-            _ => println!("math i illegal instruction. {:08x}.", instr),
+            _ => panic!("math i illegal instruction. {:08x}.", instr),
         }
     }
 
-    fn execute_math(cpu: &Rv32Cpu, instr: u32) {
+    fn execute_math(cpu: &mut Rv32Cpu, instr: u32) {
         let (rs1, rs1_data) = cpu.get_rs_1(instr);
         let (rs2, rs2_data) = cpu.get_rs_2(instr);
 
@@ -408,11 +394,11 @@ impl Rv32Actor {
                 println!("divu {}, {}, {}", REG_NAME[rd], REG_NAME[rs1], REG_NAME[rs2]);
             },
             //others
-            _ => println!("math i illegal instruction. {:08x}.", instr),
+            _ => panic!("math i illegal instruction. {:08x}.", instr),
         }
     }
 
-    fn execute_load(&self, cpu: &Rv32Cpu, instr: u32) {
+    fn execute_load(cpu: &mut Rv32Cpu, instr: u32, mems: &Vec<Mem>, perips: &Vec<Perips>) {
         let (rs1, rs1_data) = cpu.get_rs_1(instr);
         let imm = (instr>>20) & 0x00000fff;
         let s_imm = if instr & 0x80000000 == 0x80000000 { 0xfffff000 | imm } else { imm };
@@ -426,7 +412,7 @@ impl Rv32Actor {
                 //     if m.in_range(r_addr) {
                 //         rd_data = m.read_u8(r_addr) as i8 as i32;
                 // }});
-                for m in self.mems.iter() {
+                for m in mems.iter() {
                     if m.in_range(r_addr) {
                         rd_data = m.read_u8(r_addr) as i8 as i32;
                         break;
@@ -438,7 +424,7 @@ impl Rv32Actor {
             //lbu 3'b100
             0x04 => {
                 let mut rd_data = 0;
-                for m in self.mems.iter() {
+                for m in mems.iter() {
                     if m.in_range(r_addr) {
                         rd_data = m.read_u8(r_addr);
                         break;
@@ -450,7 +436,7 @@ impl Rv32Actor {
             //lh 3'b001
             0x01 => {
                 let mut rd_data = 0;
-                for m in self.mems.iter() {
+                for m in mems.iter() {
                     if m.in_range(r_addr) {
                         rd_data = m.read_u16(r_addr) as i16 as i32;
                         break;
@@ -462,7 +448,7 @@ impl Rv32Actor {
             //lhu 3'b101
             0x05 => {
                 let mut rd_data = 0;
-                for m in self.mems.iter() {
+                for m in mems.iter() {
                     if m.in_range(r_addr) {
                         rd_data = m.read_u16(r_addr);
                         break;
@@ -474,13 +460,13 @@ impl Rv32Actor {
             //lw 3'b010
             0x02 => {
                 let mut rd_data = 0 ;
-                for m in self.mems.iter() {
+                for m in mems.iter() {
                     if m.in_range(r_addr) {
                         rd_data = m.read_u32(r_addr);
                         break;
                     }
                 }
-                for p in self.perips.iter() {
+                for p in perips.iter() {
                     if p.in_range(r_addr) {
                         rd_data = p.read_u32(r_addr);
                         break;
@@ -490,11 +476,11 @@ impl Rv32Actor {
                 println!("lw x{rd}, {}({})", s_imm as i32, REG_NAME[rs1]);
             },
             //others
-            _ => println!("load illegal instruction. {:08x}.", instr),
+            _ => panic!("load illegal instruction. {:08x}.", instr),
         }
     }
 
-    fn execute_store(&self, cpu: &Rv32Cpu, instr: u32) {
+    fn execute_store(cpu: &mut Rv32Cpu, instr: u32, mems: &mut Vec<Mem>, perips: &mut Vec<Perips>) {
         let (rs1, rs1_data) = cpu.get_rs_1(instr);
         let (rs2, rs2_data) = cpu.get_rs_2(instr);
         let imm = ((instr>>20) & 0x000007e0) | ((instr>>7) & 0x0000001f);
@@ -504,7 +490,7 @@ impl Rv32Actor {
         match instr>>12 & 0x07 {
             //sb 3'b000
             0x00 => {
-                for m in self.mems.iter_mut() {
+                for m in mems.iter_mut() {
                     if m.in_range(wr_addr) {
                         m.write_u8((rs2_data & 0xff) as u8, wr_addr);
                         break;
@@ -514,7 +500,7 @@ impl Rv32Actor {
             },
             //sh 3'b001
             0x01 => {
-                for m in self.mems.iter_mut() {
+                for m in mems.iter_mut() {
                     if m.in_range(wr_addr) {
                         m.write_u16((rs2_data & 0xffff) as u16, wr_addr);
                         break;
@@ -524,13 +510,13 @@ impl Rv32Actor {
             },
             //sw 3'b010
             0x02 => {
-                for m in self.mems.iter_mut() {
+                for m in mems.iter_mut() {
                     if m.in_range(wr_addr) {
                         m.write_u32(rs2_data, wr_addr);
                         break;
                     }
                 }
-                for p in self.perips.iter_mut() {
+                for p in perips.iter_mut() {
                     if p.in_range(wr_addr) {
                         p.write_u32(rs2_data, wr_addr);
                         break;
@@ -539,11 +525,11 @@ impl Rv32Actor {
                 println!("sb {}, {}({})", REG_NAME[rs2], s_imm as i32, REG_NAME[rs1]);
             },
             //others
-            _ => println!("store illegal instruction. {:08x}.", instr),
+            _ => panic!("store illegal instruction. {:08x}.", instr),
         }
     }
 
-    fn execute_fence(cpu: &Rv32Cpu, instr: u32) {
+    fn execute_fence(_cpu: &mut Rv32Cpu, instr: u32) {
         match instr>>12 & 0x07 {
             //fence 3'b000
             0x00 => {
@@ -557,7 +543,7 @@ impl Rv32Actor {
         }
     }
 
-    fn execute_sys(cpu: &Rv32Cpu, instr: u32) {
+    fn execute_sys(cpu: &mut Rv32Cpu, instr: u32) {
         let (rs1, rs1_data) = cpu.get_rs_1(instr);
         let csr = instr>>20 & 0xfff;
 

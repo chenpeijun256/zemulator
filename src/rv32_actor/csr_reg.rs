@@ -34,12 +34,11 @@ impl CsrReg {
 
 impl std::fmt::Display for CsrReg {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let mut out_str = "Csr-------------------------\n".to_owned();
+        let mut out_str = String::new();
         out_str.push_str(&format!("mepc={:x}.\n", self.mepc));
         out_str.push_str(&format!("mcause={:x}({:b}).\n", self.mcause, self.mcause));
         out_str.push_str(&format!("mstatus={:x}({:b}).\n", self.mstatus, self.mstatus));
         out_str.push_str(&format!("mtvec={:x}.\n", self.mtvec));
-        out_str.push_str("----------------------------");
         write!(f, "{}", out_str)
     }
 }
