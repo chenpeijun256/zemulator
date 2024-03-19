@@ -4,8 +4,6 @@ mod perips;
 mod config;
 mod rv32_actor;
 
-use riscv_cpu::RiscvCpu;
-
 fn test_isa() {
     let filenames = [
         "isa/rv32ui-p-add.bin", 
@@ -65,7 +63,7 @@ fn test_isa() {
         println!("start read {filename}");
         match bin_file::read_file(filename) {
             Ok(bytes) => {
-                let mut cpu: RiscvCpu = config::build_soc("".to_owned());
+                let mut soc = config::build_soc("".to_owned());
                 cpu.fill_mem(0, bytes, 0);
 
                 let mut exit_loop = 0;

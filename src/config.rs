@@ -1,7 +1,7 @@
 use std::{fs::{self, File}, io::BufReader};
-// use serde_json::json;
-use crate::{perips::Perips, riscv_cpu::RiscvCpu};
-use crate::mem::Mem;
+use crate::{mem::Mem, rv32_actor::Rv32Actor};
+use crate::perips::Perips;
+use crate::rv32_actor::cpu::Rv32Cpu;
 
 use serde::{Deserialize, Serialize};
 
@@ -38,23 +38,30 @@ struct CSoc {
     perips: Vec<CPerips>,
 }
 
-pub fn build_soc(cfg_file: String) -> RiscvCpu {
+pub fn build_soc(cfg_file: String) -> Rv32Actor {
     let soc_cfg = read_cfg(cfg_file);
     println!("create {} soc with rst pc: {}", soc_cfg.name, soc_cfg.rst_pc);
-    let mut cpu = RiscvCpu::new(soc_cfg.name, soc_cfg.rst_pc);
+    let mut soc: Rv32Actor = Rv32Actor::new();
+
+    for cfg in soc_cfg.cpus {
+        let cpu = Rv32Cpu::new(cfg.name, soc_cfg.rst_pc, cfg.freq);
+        println!("add cpu {:?} to cpu.", cpu);
+        soc.add_cpu(cpu);
+    }
+
     for cfg in soc_cfg.mems {
         let mem = Mem::new(cfg.name, cfg.start, cfg.size);
         println!("add mem {:?} to cpu.", mem);
-        cpu.add_mem(mem);
+        soc.add_mem(mem);
     }
 
     for cfg in soc_cfg.perips {
         let p = Perips::new(cfg.name, cfg.start, cfg.size, cfg.intr);
         println!("add perips {:?} to cpu.", p);
-        cpu.add_perips(p);
+        soc.add_perips(p);
     }
 
-    cpu
+    soc
 }
 
 fn read_cfg(cfg_file: String) -> CSoc {
