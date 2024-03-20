@@ -1,3 +1,4 @@
+use crate::intrrupt::IntrType;
 use crate::rv32_actor::csr_reg::CsrReg;
 use crate::rv32_actor::com_reg::ComReg;
 
@@ -7,6 +8,7 @@ pub struct Rv32Cpu {
     freq: f32,
 
     pc: u32,
+    exception: IntrType,
 
     reg: ComReg,
     csr: CsrReg,
@@ -18,9 +20,22 @@ impl Rv32Cpu {
                     name,
                     freq,
                     pc: rst_pc, 
+                    exception: IntrType::None,
                     reg: ComReg::new(32), 
                     csr: CsrReg::new(), 
                 }
+    }
+
+    pub fn match_name(&self, name: &String) -> bool {
+        self.name.eq(name)
+    }
+
+    pub fn exception(&self) -> IntrType {
+        self.exception
+    }
+
+    pub fn set_exception(&mut self, exce: IntrType) {
+        self.exception = exce;
     }
 
     pub fn get_pc(&self) -> u32 {
@@ -33,6 +48,10 @@ impl Rv32Cpu {
 
     pub fn get_rs(&self, index: u32) -> u32 {
         self.reg.read(index)
+    }
+
+    pub fn set_rs(&mut self, index: u32, data: u32) {
+        self.reg.write(index, data);
     }
 
     pub fn set_rd(&mut self, instr: u32, data: u32) -> usize {

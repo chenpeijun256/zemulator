@@ -14,7 +14,7 @@ pub struct Perips {
 
 impl MemIO for Perips {
     fn in_range(&self, addr: u32) -> bool {
-        addr >= self.start && addr < self.start + self.size
+        addr >= self.start && addr < self.start + self.size * 4
     }
 
     fn read_u32(&self, addr: u32) -> u32 {
@@ -55,7 +55,19 @@ impl Perips {
             }
     }
 
-    pub fn name(&self) -> &String {
-        &self.name
+    // pub fn name(&self) -> &String {
+    //     &self.name
+    // }
+
+    pub fn match_name(&self, name: &String) -> bool {
+        self.name.eq(name)
+    }
+
+    pub fn get_intr(&self) -> u32 {
+        self.registers[((self.intr - self.start)>>2) as usize]
+    }
+
+    pub fn clear_intr(&mut self) {
+        self.registers[((self.intr - self.start)>>2) as usize] = 0;
     }
 }

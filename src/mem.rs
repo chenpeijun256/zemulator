@@ -78,6 +78,10 @@ impl Mem {
         }
     }
 
+    pub fn match_name(&self, name: &String) -> bool {
+        self.name.eq(name)
+    }
+
     // pub fn length(&self) -> usize {
     //     self.data.len()
     // }

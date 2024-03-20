@@ -27,7 +27,7 @@ impl CsrReg {
             0x342 => self.mcause = dat,
             0x300 => self.mstatus = dat,
             0x305 => self.mtvec = dat,
-            _ => panic!("csr read address {:x} not exist.", addr),
+            _ => panic!("csr write address {:x} not exist.", addr),
         }
     }
 }

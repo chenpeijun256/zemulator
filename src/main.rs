@@ -3,6 +3,8 @@ mod mem;
 mod perips;
 mod config;
 mod rv32_actor;
+mod utils;
+mod intrrupt;
 
 fn test_isa() {
     let filenames = [
@@ -113,29 +115,6 @@ fn test_isa() {
     println!("successful {}.", filenames.len() - failed - not_complete);
 }
 
-fn split_string(line: String) -> Vec<String> {
-    let mut res = Vec::new();
-
-    line.trim().split_ascii_whitespace().for_each(|elem| {
-        res.push(elem.to_owned());
-    });
-    return res;
-}
-
-fn parse_i32(n_str: &str) -> i32 {
-    match i32::from_str_radix(n_str, 10) {
-        Ok(steps) => steps,
-        Err(_) => i32::MIN,
-    }
-}
-
-fn parse_hex_u32(n_str: &str) -> u32 {
-    match u32::from_str_radix(n_str, 16) {
-        Ok(steps) => steps,
-        Err(_) => 0,
-    }
-}
-
 fn test_one_file(filename: &String, mut steps: i32) {
     println!("start read {filename}");
     match bin_file::read_file(filename) {
@@ -155,13 +134,13 @@ fn test_one_file(filename: &String, mut steps: i32) {
                         Ok(_) => {
                             // println!("{n} bytes read.");
                             // println!("key = {}.", key.trim());
-                            let cmds = split_string(key);
+                            let cmds = crate::utils::split_string(key);
                             if cmds.len() > 0 {
                                 if cmds[0] == "q" {
                                     break;
-                                } else if cmds[0] == "s" {
+                                } else if cmds[0] == "n" {
                                     if cmds.len() > 1 {
-                                        steps = parse_i32(&cmds[1]);
+                                        steps = crate::utils::parse_i32_err_to_min(&cmds[1]);
                                     } else {
                                         steps = 1;
                                     }
@@ -171,23 +150,21 @@ fn test_one_file(filename: &String, mut steps: i32) {
                                     println!("insert breakpoint.");
                                     steps = 0;
                                 } else if cmds[0] == "p" {
-                                    if cmds.len() > 1 {
-                                        if cmds[1] == "mem" {
-                                            if cmds.len() > 2{
-                                                soc.print_mem(parse_hex_u32(&cmds[2]));
-                                            } else {
-                                                soc.print_mem(0);
-                                            }
-                                        } else if cmds[1] == "reg" {
-                                            soc.print_reg();
-                                        } else if cmds[1] == "csr" {
-                                            soc.print_csr();
-                                        } else {
-                                            soc.print_perips(&cmds[1]);
-                                        }
+                                    if cmds.len() > 2 {
+                                        soc.print_d(&cmds[1], &cmds[2]);
                                     } else {
-                                        println!("e.g. p reg/csr.");
-                                        println!("     p mem xxx(hex).");
+                                        println!("e.g. p cpu0 reg/csr.");
+                                        println!("     p mem address(hex).");
+                                        println!("     p gpio_a offset(hex).");
+                                    }
+                                    steps = 0;
+                                } else if cmds[0] == "s" {
+                                    if cmds.len() > 3 {
+                                        soc.set_v_d(&cmds[1], &cmds[2], &cmds[3]);
+                                    } else {
+                                        println!("e.g. s cpu0 index(hex, reg<32, else csr) vvv(hex).");
+                                        println!("     s mem address(hex) vvv(hex).");
+                                        println!("     s gpio_a(perips) address(hex) vvv(hex).");
                                     }
                                     steps = 0;
                                 } else {
