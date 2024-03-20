@@ -26,6 +26,10 @@ impl Rv32Cpu {
                 }
     }
 
+    pub fn name(&self) -> &String {
+        &self.name
+    }
+
     pub fn match_name(&self, name: &String) -> bool {
         self.name.eq(name)
     }

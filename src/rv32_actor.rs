@@ -91,6 +91,7 @@ impl Rv32Actor {
             if p.get_intr() & 0x80000000 == 0x80000000 {
                 intrrupt_en = true;
                 p.clear_intr();
+                break;
             }
         }
 
@@ -118,18 +119,19 @@ impl Rv32Actor {
     }
 
     pub fn tick(&mut self) {
+        println!("--- @ {}, tick: {} ---", self.name, self.tick_cnt);
         for cpu in self.cpus.iter_mut() {
             let pc = cpu.get_pc();
             let instr = Rv32Actor::read_instr(&self.mems, pc);
             if instr != 0 {
-                println!("({}@{}) pc: {:x}, instr: {:08x}", self.name, self.tick_cnt, pc, instr);
+                println!("[{}] pc: {:x}, instr: {:08x}", cpu.name(), pc, instr);
                 Rv32Actor::execute(cpu, pc, instr, &mut self.mems, &mut self.perips);
             } else {
-                println!("read code failed at pc: {}", pc);
+                println!("read code failed at pc: {:x}", pc);
                 cpu.set_exception(IntrType::ExceMem(pc));
             }
-            self.tick_cnt += 1;
         }
+        self.tick_cnt += 1;
 
         self.handle_exception();
     }
